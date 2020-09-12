@@ -18,6 +18,7 @@ struct Entry {
     id: TodoId,
     description: String,
     completed: bool,
+    editing: bool,
 }
 
 enum Message {
@@ -25,6 +26,8 @@ enum Message {
     Add,
     Check(TodoId, bool),
     Delete(TodoId),
+    UpdateEntry(TodoId, String),
+    EditingEntry(TodoId, bool),
 }
 
 impl Application for Model {
@@ -45,6 +48,7 @@ impl Application for Model {
                             id,
                             description,
                             completed: false,
+                            editing: false,
                         },
                     );
                 }
@@ -56,6 +60,16 @@ impl Application for Model {
             }
             Message::Delete(id) => {
                 self.entries.remove(&id);
+            }
+            Message::UpdateEntry(id, description) => {
+                self.entries.get_mut(&id).map(|entry| {
+                    entry.description = description;
+                });
+            }
+            Message::EditingEntry(id, editing) => {
+                self.entries.get_mut(&id).map(|entry| {
+                    entry.editing = editing;
+                });
             }
         }
 
@@ -78,24 +92,36 @@ impl Application for Model {
             let Entry {
                 id,
                 completed,
+                editing,
                 ref description,
                 ..
             } = *entry;
 
-            h::li().with(
-                h::div().class("view").with((
+            h::li().with((
+                h::div().class("view").disabled(editing).with((
                     h::input()
                         .class("toggle")
                         .type_("checkbox")
                         .checked(completed)
                         .on_check(move |checked| Message::Check(id, checked)),
-                    h::label().with(description.clone()),
+                    h::label()
+                        .on("dblclick", move |_| Message::EditingEntry(id, true))
+                        .with(description.clone()),
                     h::button()
                         .class("destroy")
                         .on("click", move |_| Message::Delete(id))
                         .with("Delete"),
                 )),
-            )
+                h::input()
+                    .class("edit")
+                    .disabled(!editing)
+                    .value(description.clone())
+                    .name("title")
+                    .id(format!("todo-{}", id))
+                    .on_input(move |input| Message::UpdateEntry(id, input))
+                    .on("blur", move |_| Message::EditingEntry(id, false))
+                    .on_enter(move || Message::EditingEntry(id, false)),
+            ))
         };
 
         let entries = h::section().class("main").with(
