@@ -129,9 +129,10 @@ impl Application for TodoMVC {
         let input = h::header().class("header").with((
             h::h1().with("todos"),
             h::input()
-                .name("new_todo")
+                .class("new-todo")
                 .placeholder("What needs to be done?")
                 .autofocus(true)
+                .name("new_todo")
                 .value(input.clone())
                 .on_input(Message::UpdateField)
                 .on_enter(|| Message::Add),
@@ -141,46 +142,90 @@ impl Application for TodoMVC {
             let Entry {
                 id,
                 completed,
+                editing,
                 ref description,
                 ..
             } = *entry;
 
-            h::li().with((
-                h::div().class("view").with((
+            h::li()
+                .if_true(completed, |h| h.class("completed"))
+                .if_true(editing, |h| h.class("editing"))
+                .with((
+                    h::div().class("view").with((
+                        h::input()
+                            .class("toggle")
+                            .type_("checkbox")
+                            .checked(completed)
+                            .on_check(move |checked| Message::Check(id, checked)),
+                        h::label()
+                            .on("dblclick", move |_| Message::EditingEntry(id, true))
+                            .with(description.clone()),
+                        h::button()
+                            .class("destroy")
+                            .on("click", move |_| Message::Delete(id)),
+                    )),
                     h::input()
-                        .class("toggle")
-                        .type_("checkbox")
-                        .checked(completed)
-                        .on_check(move |checked| Message::Check(id, checked)),
-                    h::label()
-                        .on("dblclick", move |_| Message::EditingEntry(id, true))
-                        .with(description.clone()),
-                    h::button()
-                        .class("destroy")
-                        .on("click", move |_| Message::Delete(id))
-                        .with("Delete"),
-                )),
-                h::input()
-                    .class("edit")
-                    .value(description.clone())
-                    .name("title")
-                    .id(format!("todo-{}", id))
-                    .on_input(move |input| Message::UpdateEntry(id, input))
-                    .on("blur", move |_| Message::EditingEntry(id, false))
-                    .on_enter(move || Message::EditingEntry(id, false))
-                    .ref_(move |e| Message::RefEntry(id, e)),
-            ))
+                        .class("edit")
+                        .value(description.clone())
+                        .name("title")
+                        .id(format!("todo-{}", id))
+                        .on_input(move |input| Message::UpdateEntry(id, input))
+                        .on("blur", move |_| Message::EditingEntry(id, false))
+                        .on_enter(move || Message::EditingEntry(id, false))
+                        .ref_(move |e| Message::RefEntry(id, e)),
+                ))
         };
 
-        let entries = h::section().class("main").with(
+        let entries = h::section().class("main").with((
+            h::input()
+                .class("toggle-all")
+                .type_("checkbox")
+                .name("toggle"),
+            h::label().for_("toggle-all").with("Mark all as complete"),
             h::ul()
                 .class("todo-list")
                 .append(entries.values().map(view_entry)),
-        );
+        ));
 
-        h::div().class("todoapp").with((input, entries)).into()
+        let info_footer = h::footer().class("info").with((
+            h::p().with("Double-click to edit a todo"),
+            h::p().with((
+                "Written by ",
+                h::a()
+                    .href("https://github.com/ubnt-intrepid/")
+                    .with("@ubnt-intrepid"),
+            )),
+            h::p().with((
+                "Part of ",
+                h::a().href("http://todomvc.com").with("TodoMVC"),
+            )),
+        ));
+
+        h::div()
+            .class("todomvc-wrapper")
+            .visibility("hidden")
+            .with((
+                h::section().class("todoapp").with((input, entries)),
+                info_footer,
+            ))
+            .into()
     }
 }
+
+trait BuilderExt {
+    fn if_true(self, pred: bool, f: impl FnOnce(Self) -> Self) -> Self
+    where
+        Self: Sized,
+    {
+        if pred {
+            f(self)
+        } else {
+            self
+        }
+    }
+}
+
+impl<T> BuilderExt for T {}
 
 trait Ext<Msg> {
     fn on_check(self, f: impl Fn(bool) -> Msg + 'static) -> Self
@@ -221,6 +266,8 @@ pub fn main() -> Result<(), JsValue> {
     let document = window
         .document()
         .ok_or("should have a document on window")?;
+
+    document.set_title("Draco • TodoMVC");
 
     let app = document
         .get_element_by_id("app")

@@ -34,5 +34,13 @@ module.exports = (env, argv) => {
                 template: path.resolve(srcDir, 'index.html'),
             }),
         ],
+        module: {
+            rules: [
+                {
+                    test: /\.css$/i,
+                    use: [ 'style-loader', 'css-loader' ],
+                }
+            ],
+        }
     };
 };
