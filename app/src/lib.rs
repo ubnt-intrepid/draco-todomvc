@@ -1,22 +1,29 @@
 use draco::html as h;
 use draco::{Application, Mailbox, VNode};
+use indexmap::IndexMap;
 use std::mem;
+use ulid::Ulid;
 use wasm_bindgen::prelude::*;
+
+type TodoId = Ulid;
 
 #[derive(Debug)]
 struct Model {
     input: String,
-    entries: Vec<Entry>,
+    entries: IndexMap<TodoId, Entry>,
 }
 
 #[derive(Debug)]
 struct Entry {
+    id: TodoId,
     description: String,
+    completed: bool,
 }
 
 enum Message {
     UpdateField(String),
     Add,
+    Check(TodoId, bool),
 }
 
 impl Application for Model {
@@ -28,8 +35,21 @@ impl Application for Model {
                 self.input = input;
             }
             Message::Add => {
-                let title = mem::take(&mut self.input);
-                self.entries.push(Entry { description: title });
+                let description = mem::take(&mut self.input);
+                let id = TodoId::new();
+                self.entries.insert(
+                    id,
+                    Entry {
+                        id,
+                        description,
+                        completed: false,
+                    },
+                );
+            }
+            Message::Check(id, completed) => {
+                self.entries
+                    .get_mut(&id)
+                    .map(|todo| todo.completed = completed);
             }
         }
 
@@ -54,17 +74,38 @@ impl Application for Model {
             .with(
                 h::ul()
                     .class("todo-list")
-                    .append(self.entries.iter().map(|todo| {
+                    .append(self.entries.values().map(|todo| {
+                        let id = todo.id;
                         h::li().with(
-                            h::div()
-                                .class("view")
-                                .with(h::label().with(todo.description.clone())),
+                            h::div().class("view").with((
+                                h::input()
+                                    .class("toggle")
+                                    .type_("checkbox")
+                                    .checked(todo.completed)
+                                    .on_("click", move |event| {
+                                        let checked = js_sys::Reflect::get(
+                                            &&event.target()?,
+                                            &JsValue::from_str("checked"),
+                                        )
+                                        .ok()?
+                                        .as_bool()?;
+                                        Some(Message::Check(id, checked))
+                                    }),
+                                h::label().with(todo.description.clone()),
+                            )),
                         )
                     })),
             );
 
         h::div() //
             .class("todoapp")
+            .with(
+                h::textarea()
+                    .disabled(true)
+                    .rows(12)
+                    .cols(80)
+                    .with(format!("{:#?}", self)),
+            )
             .with((input, entries))
             .into()
     }
@@ -86,7 +127,7 @@ pub fn main() -> Result<(), JsValue> {
 
     let todomvc = Model {
         input: "".into(),
-        entries: vec![],
+        entries: IndexMap::new(),
     };
 
     let _mailbox = draco::start(todomvc, node.into());

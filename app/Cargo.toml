@@ -10,6 +10,9 @@ crate-type = ["cdylib"]
 [dependencies]
 draco = { git = "https://github.com/utkarshkukreti/draco.git", rev = "32419ec" }
 wasm-bindgen = "0.2"
+js-sys = "0.3"
+ulid = "0.4"
+indexmap = "1"
 
 [dependencies.web-sys]
 version = "0.3"
