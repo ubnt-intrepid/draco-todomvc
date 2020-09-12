@@ -70,7 +70,10 @@ impl Application for Model {
                 .value(self.input.clone())
                 .on_input(Message::UpdateField),
             // FIXME: remove this and add on_enter event to above input element.
-            h::button().on("click", |_| Message::Add).with("Add"),
+            h::button()
+                .disabled(self.input.trim().is_empty())
+                .on("click", |_| Message::Add)
+                .with("Add"),
         ));
 
         let view_entry = |entry: &Entry| {
