@@ -24,6 +24,7 @@ enum Message {
     UpdateField(String),
     Add,
     Check(TodoId, bool),
+    Delete(TodoId),
 }
 
 impl Application for Model {
@@ -50,6 +51,9 @@ impl Application for Model {
                 self.entries
                     .get_mut(&id)
                     .map(|todo| todo.completed = completed);
+            }
+            Message::Delete(id) => {
+                self.entries.remove(&id);
             }
         }
 
@@ -93,6 +97,10 @@ impl Application for Model {
                             Some(Message::Check(id, checked))
                         }),
                     h::label().with(description.clone()),
+                    h::button()
+                        .class("destroy")
+                        .on("click", move |_| Message::Delete(id))
+                        .with("Delete"),
                 )),
             )
         };
