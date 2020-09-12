@@ -36,16 +36,18 @@ impl Application for Model {
                 self.input = input;
             }
             Message::Add => {
-                let description = mem::take(&mut self.input);
-                let id = TodoId::new();
-                self.entries.insert(
-                    id,
-                    Entry {
+                let description = mem::take(&mut self.input).trim().to_owned();
+                if !description.is_empty() {
+                    let id = TodoId::new();
+                    self.entries.insert(
                         id,
-                        description,
-                        completed: false,
-                    },
-                );
+                        Entry {
+                            id,
+                            description,
+                            completed: false,
+                        },
+                    );
+                }
             }
             Message::Check(id, completed) => {
                 self.entries
@@ -68,12 +70,8 @@ impl Application for Model {
                 .placeholder("What needs to be done?")
                 .autofocus(true)
                 .value(self.input.clone())
-                .on_input(Message::UpdateField),
-            // FIXME: remove this and add on_enter event to above input element.
-            h::button()
-                .disabled(self.input.trim().is_empty())
-                .on("click", |_| Message::Add)
-                .with("Add"),
+                .on_input(Message::UpdateField)
+                .on_enter(|| Message::Add),
         ));
 
         let view_entry = |entry: &Entry| {
@@ -90,15 +88,7 @@ impl Application for Model {
                         .class("toggle")
                         .type_("checkbox")
                         .checked(completed)
-                        .on_("click", move |event| {
-                            let checked = js_sys::Reflect::get(
-                                &&event.target()?,
-                                &JsValue::from_str("checked"),
-                            )
-                            .ok()?
-                            .as_bool()?;
-                            Some(Message::Check(id, checked))
-                        }),
+                        .on_check(move |checked| Message::Check(id, checked)),
                     h::label().with(description.clone()),
                     h::button()
                         .class("destroy")
@@ -125,6 +115,39 @@ impl Application for Model {
             )
             .with((input, entries))
             .into()
+    }
+}
+
+trait Ext<Msg> {
+    fn on_check(self, f: impl Fn(bool) -> Msg + 'static) -> Self
+    where
+        Self: Sized;
+
+    fn on_enter(self, f: impl Fn() -> Msg + 'static) -> Self
+    where
+        Self: Sized;
+}
+
+impl<Msg> Ext<Msg> for draco::VNonKeyedElement<Msg> {
+    fn on_check(self, f: impl Fn(bool) -> Msg + 'static) -> Self {
+        self.on_("click", move |event| {
+            let checked = js_sys::Reflect::get(&&event.target()?, &JsValue::from_str("checked"))
+                .ok()?
+                .as_bool()?;
+            Some(f(checked))
+        })
+    }
+
+    fn on_enter(self, f: impl Fn() -> Msg + 'static) -> Self {
+        self.on_("keydown", move |event| {
+            let key = js_sys::Reflect::get(&event, &JsValue::from_str("key"))
+                .ok()?
+                .as_string()?;
+            match &*key {
+                "Enter" => Some(f()),
+                _ => None,
+            }
+        })
     }
 }
 
