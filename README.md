@@ -1,8 +1,10 @@
-# `draco-webpack-starter`
+# `draco-todomvc`
 
-An **unofficial** template for Web apps with [`draco`] and Webpack.
+A [`TodoMVC`] implementation in Rust with `draco`.
 
-Inspired by [`seed-quickstart-webpack`](https://github.com/seed-rs/seed-quickstart-webpack).
+Based on [`elm-todomvc`].
 
 <!-- links -->
-[`draco`]: https://github.com/seed-rs/seed-quickstart-webpack
+[`TodoMVC`]: http://todomvc.com/
+[`draco`]: https://github.com/utkarshkukreti/draco/
+[`elm-todomvc`]: https://github.com/evancz/elm-todomvc
