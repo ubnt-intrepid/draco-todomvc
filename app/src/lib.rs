@@ -1,13 +1,72 @@
-use draco::{Application, VNode};
+use draco::html as h;
+use draco::{Application, Mailbox, VNode};
+use std::mem;
 use wasm_bindgen::prelude::*;
 
-struct MyApp;
+#[derive(Debug)]
+struct Model {
+    input: String,
+    entries: Vec<Entry>,
+}
 
-impl Application for MyApp {
-    type Message = ();
+#[derive(Debug)]
+struct Entry {
+    description: String,
+}
+
+enum Message {
+    UpdateField(String),
+    Add,
+}
+
+impl Application for Model {
+    type Message = Message;
+
+    fn update(&mut self, message: Self::Message, _: &Mailbox<Self::Message>) {
+        match message {
+            Message::UpdateField(input) => {
+                self.input = input;
+            }
+            Message::Add => {
+                let title = mem::take(&mut self.input);
+                self.entries.push(Entry { description: title });
+            }
+        }
+
+        // FIXME: save model to localStorage
+    }
 
     fn view(&self) -> VNode<Self::Message> {
-        "Hello from Rust!".into()
+        let input = h::header().class("header").with((
+            h::h1().with("todos"),
+            h::input()
+                .name("new_todo")
+                .placeholder("What needs to be done?")
+                .autofocus(true)
+                .value(self.input.clone())
+                .on_input(Message::UpdateField),
+            // FIXME: remove this and add on_enter event to above input element.
+            h::button().on("click", |_| Message::Add).with("Add"),
+        ));
+
+        let entries = h::section()
+            .class("main")
+            .with(
+                h::ul()
+                    .class("todo-list")
+                    .append(self.entries.iter().map(|todo| {
+                        h::li().with(
+                            h::div()
+                                .class("view")
+                                .with(h::label().with(todo.description.clone())),
+                        )
+                    })),
+            );
+
+        h::div() //
+            .class("todoapp")
+            .with((input, entries))
+            .into()
     }
 }
 
@@ -25,7 +84,12 @@ pub fn main() -> Result<(), JsValue> {
     let node = document.create_element("div")?;
     app.append_child(&node)?;
 
-    let _mailbox = draco::start(MyApp, node.into());
+    let todomvc = Model {
+        input: "".into(),
+        entries: vec![],
+    };
+
+    let _mailbox = draco::start(todomvc, node.into());
 
     Ok(())
 }
