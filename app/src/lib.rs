@@ -1,19 +1,23 @@
 use draco::html as h;
 use draco::{Application, Mailbox, VNode};
 use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
 use std::mem;
 use ulid::Ulid;
 use wasm_bindgen::prelude::*;
 
 type TodoId = Ulid;
 
-#[derive(Debug)]
+const STORAGE_KEY: &str = "draco-todomvc-save";
+
+#[derive(Debug, Default, Deserialize, Serialize)]
 struct Model {
+    #[serde(skip)]
     input: String,
     entries: IndexMap<TodoId, Entry>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 struct Entry {
     id: TodoId,
     description: String,
@@ -30,19 +34,42 @@ enum Message {
     EditingEntry(TodoId, bool),
 }
 
-impl Application for Model {
+#[derive(Debug)]
+struct TodoMVC {
+    model: Model,
+    storage: web_sys::Storage,
+}
+
+impl TodoMVC {
+    fn set_storage(&self) {
+        let encoded = serde_json::to_string(&self.model).expect("failed to encode JSON");
+        self.storage.set_item(STORAGE_KEY, &encoded).unwrap();
+    }
+}
+
+impl Application for TodoMVC {
     type Message = Message;
 
     fn update(&mut self, message: Self::Message, _: &Mailbox<Self::Message>) {
+        let Self {
+            model:
+                Model {
+                    ref mut input,
+                    ref mut entries,
+                    ..
+                },
+            ..
+        } = *self;
+
         match message {
-            Message::UpdateField(input) => {
-                self.input = input;
+            Message::UpdateField(new_input) => {
+                *input = new_input;
             }
             Message::Add => {
-                let description = mem::take(&mut self.input).trim().to_owned();
+                let description = mem::take(input).trim().to_owned();
                 if !description.is_empty() {
                     let id = TodoId::new();
-                    self.entries.insert(
+                    entries.insert(
                         id,
                         Entry {
                             id,
@@ -52,38 +79,45 @@ impl Application for Model {
                         },
                     );
                 }
+                self.set_storage();
             }
             Message::Check(id, completed) => {
-                self.entries
-                    .get_mut(&id)
-                    .map(|todo| todo.completed = completed);
+                if let Some(entry) = entries.get_mut(&id) {
+                    entry.completed = completed;
+                    self.set_storage();
+                }
             }
             Message::Delete(id) => {
-                self.entries.remove(&id);
+                entries.remove(&id);
+                self.set_storage();
             }
             Message::UpdateEntry(id, description) => {
-                self.entries.get_mut(&id).map(|entry| {
+                if let Some(entry) = entries.get_mut(&id) {
                     entry.description = description;
-                });
+                }
             }
             Message::EditingEntry(id, editing) => {
-                self.entries.get_mut(&id).map(|entry| {
+                if let Some(entry) = entries.get_mut(&id) {
                     entry.editing = editing;
-                });
+                    self.set_storage();
+                }
             }
         }
-
-        // FIXME: save model to localStorage
     }
 
     fn view(&self) -> VNode<Self::Message> {
+        let Self {
+            model: Model { input, entries, .. },
+            ..
+        } = self;
+
         let input = h::header().class("header").with((
             h::h1().with("todos"),
             h::input()
                 .name("new_todo")
                 .placeholder("What needs to be done?")
                 .autofocus(true)
-                .value(self.input.clone())
+                .value(input.clone())
                 .on_input(Message::UpdateField)
                 .on_enter(|| Message::Add),
         ));
@@ -127,20 +161,10 @@ impl Application for Model {
         let entries = h::section().class("main").with(
             h::ul()
                 .class("todo-list")
-                .append(self.entries.values().map(view_entry)),
+                .append(entries.values().map(view_entry)),
         );
 
-        h::div()
-            .class("todoapp")
-            .with(
-                h::textarea()
-                    .disabled(true)
-                    .rows(12)
-                    .cols(80)
-                    .with(format!("{:#?}", self)),
-            )
-            .with((input, entries))
-            .into()
+        h::div().class("todoapp").with((input, entries)).into()
     }
 }
 
@@ -191,12 +215,16 @@ pub fn main() -> Result<(), JsValue> {
     let node = document.create_element("div")?;
     app.append_child(&node)?;
 
-    let todomvc = Model {
-        input: "".into(),
-        entries: IndexMap::new(),
-    };
+    let storage = window
+        .local_storage()?
+        .ok_or("cannot access localStorage")?;
 
-    let _mailbox = draco::start(todomvc, node.into());
+    let model_raw = storage.get_item(STORAGE_KEY).ok().flatten();
+    let model = model_raw
+        .and_then(|val| serde_json::from_str(&val).ok())
+        .unwrap_or_default();
+
+    let _mailbox = draco::start(TodoMVC { model, storage }, node.into());
 
     Ok(())
 }
