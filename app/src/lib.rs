@@ -69,35 +69,41 @@ impl Application for Model {
             h::button().on("click", |_| Message::Add).with("Add"),
         ));
 
-        let entries = h::section()
-            .class("main")
-            .with(
-                h::ul()
-                    .class("todo-list")
-                    .append(self.entries.values().map(|todo| {
-                        let id = todo.id;
-                        h::li().with(
-                            h::div().class("view").with((
-                                h::input()
-                                    .class("toggle")
-                                    .type_("checkbox")
-                                    .checked(todo.completed)
-                                    .on_("click", move |event| {
-                                        let checked = js_sys::Reflect::get(
-                                            &&event.target()?,
-                                            &JsValue::from_str("checked"),
-                                        )
-                                        .ok()?
-                                        .as_bool()?;
-                                        Some(Message::Check(id, checked))
-                                    }),
-                                h::label().with(todo.description.clone()),
-                            )),
-                        )
-                    })),
-            );
+        let view_entry = |entry: &Entry| {
+            let Entry {
+                id,
+                completed,
+                ref description,
+                ..
+            } = *entry;
 
-        h::div() //
+            h::li().with(
+                h::div().class("view").with((
+                    h::input()
+                        .class("toggle")
+                        .type_("checkbox")
+                        .checked(completed)
+                        .on_("click", move |event| {
+                            let checked = js_sys::Reflect::get(
+                                &&event.target()?,
+                                &JsValue::from_str("checked"),
+                            )
+                            .ok()?
+                            .as_bool()?;
+                            Some(Message::Check(id, checked))
+                        }),
+                    h::label().with(description.clone()),
+                )),
+            )
+        };
+
+        let entries = h::section().class("main").with(
+            h::ul()
+                .class("todo-list")
+                .append(self.entries.values().map(view_entry)),
+        );
+
+        h::div()
             .class("todoapp")
             .with(
                 h::textarea()
