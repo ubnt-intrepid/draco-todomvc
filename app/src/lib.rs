@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::mem;
 use ulid::Ulid;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast as _;
 
 type TodoId = Ulid;
 
@@ -23,6 +24,8 @@ struct Entry {
     description: String,
     completed: bool,
     editing: bool,
+    #[serde(skip)]
+    ref_: Option<web_sys::Element>,
 }
 
 enum Message {
@@ -32,6 +35,7 @@ enum Message {
     Delete(TodoId),
     UpdateEntry(TodoId, String),
     EditingEntry(TodoId, bool),
+    RefEntry(TodoId, Option<web_sys::Element>),
 }
 
 #[derive(Debug)]
@@ -76,6 +80,7 @@ impl Application for TodoMVC {
                             description,
                             completed: false,
                             editing: false,
+                            ref_: None,
                         },
                     );
                 }
@@ -99,7 +104,17 @@ impl Application for TodoMVC {
             Message::EditingEntry(id, editing) => {
                 if let Some(entry) = entries.get_mut(&id) {
                     entry.editing = editing;
+                    if let Some(ref e) = entry.ref_ {
+                        if let Some(e) = e.dyn_ref::<web_sys::HtmlElement>() {
+                            let _ = e.focus();
+                        }
+                    }
                     self.set_storage();
+                }
+            }
+            Message::RefEntry(id, ref_) => {
+                if let Some(entry) = entries.get_mut(&id) {
+                    entry.ref_ = ref_;
                 }
             }
         }
@@ -126,13 +141,12 @@ impl Application for TodoMVC {
             let Entry {
                 id,
                 completed,
-                editing,
                 ref description,
                 ..
             } = *entry;
 
             h::li().with((
-                h::div().class("view").disabled(editing).with((
+                h::div().class("view").with((
                     h::input()
                         .class("toggle")
                         .type_("checkbox")
@@ -148,13 +162,13 @@ impl Application for TodoMVC {
                 )),
                 h::input()
                     .class("edit")
-                    .disabled(!editing)
                     .value(description.clone())
                     .name("title")
                     .id(format!("todo-{}", id))
                     .on_input(move |input| Message::UpdateEntry(id, input))
                     .on("blur", move |_| Message::EditingEntry(id, false))
-                    .on_enter(move || Message::EditingEntry(id, false)),
+                    .on_enter(move || Message::EditingEntry(id, false))
+                    .ref_(move |e| Message::RefEntry(id, e)),
             ))
         };
 
