@@ -1,6 +1,6 @@
 # `draco-todomvc`
 
-A [`TodoMVC`] implementation in Rust with `draco`.
+A [`TodoMVC`] implementation in Rust with [`draco`].
 
 Based on [`elm-todomvc`].
 
