@@ -16,6 +16,7 @@ struct Model {
     #[serde(skip)]
     input: String,
     entries: IndexMap<TodoId, Entry>,
+    visibility: Option<Visibility>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -35,10 +36,19 @@ enum Message {
     Check(TodoId, bool),
     CheckAll(bool),
     Delete(TodoId),
+    DeleteComplete,
     UpdateEntry(TodoId, String),
     EditingEntry(TodoId, bool),
     RefEntry(TodoId, Option<web_sys::Element>),
     FocusEntryInput(TodoId),
+    ChangeVisibility(Visibility),
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
+enum Visibility {
+    All,
+    Active,
+    Completed,
 }
 
 #[derive(Debug)]
@@ -63,6 +73,7 @@ impl Application for TodoMVC {
                 Model {
                     ref mut input,
                     ref mut entries,
+                    ref mut visibility,
                     ..
                 },
             ..
@@ -105,6 +116,10 @@ impl Application for TodoMVC {
                 entries.remove(&id);
                 self.set_storage();
             }
+            Message::DeleteComplete => {
+                entries.retain(|_, entry| !entry.completed);
+                self.set_storage();
+            }
             Message::UpdateEntry(id, description) => {
                 if let Some(entry) = entries.get_mut(&id) {
                     entry.description = description;
@@ -132,12 +147,22 @@ impl Application for TodoMVC {
                     }
                 }
             }
+            Message::ChangeVisibility(new_visibility) => {
+                visibility.replace(new_visibility);
+                self.set_storage();
+            }
         }
     }
 
     fn view(&self) -> VNode<Self::Message> {
         let Self {
-            model: Model { input, entries, .. },
+            model:
+                Model {
+                    input,
+                    entries,
+                    visibility,
+                    ..
+                },
             ..
         } = self;
 
@@ -193,7 +218,7 @@ impl Application for TodoMVC {
                 ))
         };
 
-        let entries = h::section().class("main").with((
+        let view_entries = h::section().class("main").with((
             h::input()
                 .class("toggle-all")
                 .type_("checkbox")
@@ -201,10 +226,59 @@ impl Application for TodoMVC {
                 .checked(all_completed)
                 .on("click", move |_| Message::CheckAll(!all_completed)),
             h::label().for_("toggle-all").with("Mark all as complete"),
-            h::ul()
-                .class("todo-list")
-                .append(entries.values().map(view_entry)),
+            h::ul().class("todo-list").append(
+                entries
+                    .values()
+                    .filter(|entry| match visibility {
+                        Some(Visibility::Active) => !entry.completed,
+                        Some(Visibility::Completed) => entry.completed,
+                        _ => true,
+                    })
+                    .map(view_entry),
+            ),
         ));
+
+        let controls = || {
+            let visibility_swap = |v: Visibility, url: &'static str, text: &'static str| {
+                h::li()
+                    .on("click", move |_| Message::ChangeVisibility(v))
+                    .with(
+                        h::a()
+                            .href(url)
+                            .if_true(visibility.map_or(false, |vis| vis == v), |h| {
+                                h.class("selected")
+                            })
+                            .with(text),
+                    )
+            };
+
+            let entries_left = entries.values().filter(|e| !e.completed).count();
+            let plural_suffix = |n| if n == 1 { "" } else { "s" };
+
+            h::footer()
+                .class("footer")
+                .with((
+                    h::span().class("todo-count").with((
+                        h::strong().with(entries_left),
+                        " item",
+                        plural_suffix(entries_left),
+                        " left",
+                    )),
+                    h::ul().class("filters").with((
+                        visibility_swap(Visibility::All, "#/", "All"),
+                        visibility_swap(Visibility::Active, "#/active", "Active"),
+                        visibility_swap(Visibility::Completed, "#/completed", "Completed"),
+                    )),
+                ))
+                .if_true(entries.values().any(|entry| entry.completed), |h| {
+                    h.with(
+                        h::button()
+                            .class("clear-completed")
+                            .on("click", |_| Message::DeleteComplete)
+                            .with("Clear completed"),
+                    )
+                })
+        };
 
         let info_footer = h::footer().class("info").with((
             h::p().with("Double-click to edit a todo"),
@@ -224,7 +298,10 @@ impl Application for TodoMVC {
             .class("todomvc-wrapper")
             .visibility("hidden")
             .with((
-                h::section().class("todoapp").with((input, entries)),
+                h::section()
+                    .class("todoapp")
+                    .with((input, view_entries))
+                    .if_false(entries.is_empty(), |h| h.with(controls())),
                 info_footer,
             ))
             .into()
@@ -241,6 +318,13 @@ trait BuilderExt {
         } else {
             self
         }
+    }
+
+    fn if_false(self, pred: bool, f: impl FnOnce(Self) -> Self) -> Self
+    where
+        Self: Sized,
+    {
+        self.if_true(!pred, f)
     }
 }
 
