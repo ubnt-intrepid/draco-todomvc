@@ -33,6 +33,7 @@ enum Message {
     UpdateField(String),
     Add,
     Check(TodoId, bool),
+    CheckAll(bool),
     Delete(TodoId),
     UpdateEntry(TodoId, String),
     EditingEntry(TodoId, bool),
@@ -94,6 +95,12 @@ impl Application for TodoMVC {
                     self.set_storage();
                 }
             }
+            Message::CheckAll(completed) => {
+                for entry in entries.values_mut() {
+                    entry.completed = completed;
+                }
+                self.set_storage();
+            }
             Message::Delete(id) => {
                 entries.remove(&id);
                 self.set_storage();
@@ -133,6 +140,8 @@ impl Application for TodoMVC {
             model: Model { input, entries, .. },
             ..
         } = self;
+
+        let all_completed = entries.values().all(|entry| entry.completed);
 
         let input = h::header().class("header").with((
             h::h1().with("todos"),
@@ -188,7 +197,9 @@ impl Application for TodoMVC {
             h::input()
                 .class("toggle-all")
                 .type_("checkbox")
-                .name("toggle"),
+                .id("toggle-all")
+                .checked(all_completed)
+                .on("click", move |_| Message::CheckAll(!all_completed)),
             h::label().for_("toggle-all").with("Mark all as complete"),
             h::ul()
                 .class("todo-list")
