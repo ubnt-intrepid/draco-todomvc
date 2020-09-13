@@ -316,7 +316,7 @@ trait BuilderExt {
 
 impl<T> BuilderExt for T {}
 
-trait Ext<Msg> {
+trait VElementExt<Msg> {
     fn on_check(self, f: impl Fn(bool) -> Msg + 'static) -> Self
     where
         Self: Sized;
@@ -326,21 +326,33 @@ trait Ext<Msg> {
         Self: Sized;
 }
 
-impl<Msg> Ext<Msg> for draco::VNonKeyedElement<Msg> {
+impl<Msg> VElementExt<Msg> for draco::VNonKeyedElement<Msg> {
     fn on_check(self, f: impl Fn(bool) -> Msg + 'static) -> Self {
         self.on_("click", move |event| {
-            let checked = js_sys::Reflect::get(&&event.target()?, &JsValue::from_str("checked"))
-                .ok()?
-                .as_bool()?;
+            #[allow(unused_unsafe)]
+            let checked = unsafe {
+                js_sys::Reflect::get(
+                    &&event.target()?, //
+                    &JsValue::from_str("checked"),
+                )
+            }
+            .ok()?
+            .as_bool()?;
             Some(f(checked))
         })
     }
 
     fn on_enter(self, f: impl Fn() -> Msg + 'static) -> Self {
         self.on_("keydown", move |event| {
-            let key = js_sys::Reflect::get(&event, &JsValue::from_str("key"))
-                .ok()?
-                .as_string()?;
+            #[allow(unused_unsafe)]
+            let key = unsafe {
+                js_sys::Reflect::get(
+                    &event, //
+                    &JsValue::from_str("key"),
+                )
+            }
+            .ok()?
+            .as_string()?;
             match &*key {
                 "Enter" => Some(f()),
                 _ => None,
