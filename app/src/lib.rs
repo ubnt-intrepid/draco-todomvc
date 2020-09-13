@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::mem;
 use ulid::Ulid;
 use wasm_bindgen::prelude::*;
+use web_sys as web;
 
 type TodoId = Ulid;
 
@@ -34,10 +35,10 @@ enum Message {
     Check(TodoId, bool),
     CheckAll(bool),
     Delete(TodoId),
-    DeleteComplete,
+    DeleteCompleted,
     UpdateEntry(TodoId, String),
     EditingEntry(TodoId, bool),
-    FocusEntry(web_sys::Element),
+    FocusEntry(web::Element),
     ChangeVisibility(Visibility),
 }
 
@@ -51,13 +52,13 @@ enum Visibility {
 #[derive(Debug)]
 struct TodoMVC {
     model: Model,
-    storage: web_sys::Storage,
+    storage: web::Storage,
 }
 
 impl TodoMVC {
     fn set_storage(&self) {
-        let encoded = serde_json::to_string(&self.model).expect("failed to encode JSON");
-        self.storage.set_item(STORAGE_KEY, &encoded).unwrap();
+        let encoded = serde_json::to_string(&self.model).unwrap_throw();
+        self.storage.set_item(STORAGE_KEY, &encoded).unwrap_throw();
     }
 }
 
@@ -66,26 +67,20 @@ impl Application for TodoMVC {
 
     fn update(&mut self, message: Self::Message, _: &Mailbox<Self::Message>) {
         let Self {
-            model:
-                Model {
-                    ref mut input,
-                    ref mut entries,
-                    ref mut visibility,
-                    ..
-                },
+            model: ref mut current,
             ..
         } = *self;
 
         match message {
             Message::Nop => (),
-            Message::UpdateField(new_input) => {
-                *input = new_input;
+            Message::UpdateField(input) => {
+                current.input = input;
             }
             Message::Add => {
-                let description = mem::take(input).trim().to_owned();
+                let description = mem::take(&mut current.input).trim().to_owned();
                 if !description.is_empty() {
                     let id = TodoId::new();
-                    entries.insert(
+                    current.entries.insert(
                         id,
                         Entry {
                             id,
@@ -98,73 +93,69 @@ impl Application for TodoMVC {
                 self.set_storage();
             }
             Message::Check(id, completed) => {
-                if let Some(entry) = entries.get_mut(&id) {
+                if let Some(entry) = current.entries.get_mut(&id) {
                     entry.completed = completed;
                     self.set_storage();
                 }
             }
             Message::CheckAll(completed) => {
-                for entry in entries.values_mut() {
+                for entry in current.entries.values_mut() {
                     entry.completed = completed;
                 }
                 self.set_storage();
             }
             Message::Delete(id) => {
-                entries.remove(&id);
-                self.set_storage();
+                if let Some(..) = current.entries.remove(&id) {
+                    self.set_storage();
+                }
             }
-            Message::DeleteComplete => {
-                entries.retain(|_, entry| !entry.completed);
+            Message::DeleteCompleted => {
+                current.entries.retain(|_, entry| !entry.completed);
                 self.set_storage();
             }
             Message::UpdateEntry(id, description) => {
-                if let Some(entry) = entries.get_mut(&id) {
+                if let Some(entry) = current.entries.get_mut(&id) {
                     entry.description = description;
                 }
             }
             Message::EditingEntry(id, editing) => {
-                if let Some(entry) = entries.get_mut(&id) {
+                if let Some(entry) = current.entries.get_mut(&id) {
                     entry.editing = editing;
                 }
             }
             Message::FocusEntry(e) => {
-                let e: web_sys::HtmlInputElement = JsValue::from(e).into();
+                let e: web::HtmlElement = JsValue::from(e).into();
                 e.focus().unwrap_throw();
             }
-            Message::ChangeVisibility(new_visibility) => {
-                visibility.replace(new_visibility);
+            Message::ChangeVisibility(visibility) => {
+                current.visibility.replace(visibility);
                 self.set_storage();
             }
         }
     }
 
     fn view(&self) -> VNode<Self::Message> {
-        let Self {
-            model:
-                Model {
-                    input,
-                    entries,
-                    visibility,
-                    ..
-                },
-            ..
-        } = self;
+        let Self { model: m, .. } = self;
 
-        let all_completed = entries.values().all(|entry| entry.completed);
+        let has_completed = m.entries.values().any(|entry| entry.completed);
+        let all_completed = m.entries.values().all(|entry| entry.completed);
+        let entries_left = m.entries.values().filter(|e| !e.completed).count();
 
-        let input = h::header().class("header").with((
-            h::h1().with("todos"),
-            h::input()
-                .class("new-todo")
-                .placeholder("What needs to be done?")
-                .autofocus(true)
-                .name("new_todo")
-                .value(input.clone())
-                .on_input(Message::UpdateField)
-                .on_enter(|| Message::Add),
-        ));
+        let input = h::header() //
+            .class("header")
+            .with((
+                h::h1().with("todos"),
+                h::input()
+                    .class("new-todo")
+                    .placeholder("What needs to be done?")
+                    .autofocus(true)
+                    .name("new_todo")
+                    .value(m.input.clone())
+                    .on_input(Message::UpdateField)
+                    .on_enter(|| Message::Add),
+            ));
 
-        let view_entry = |entry: &Entry| {
+        fn view_entry(entry: &Entry) -> draco::VNonKeyedElement<Message> {
             let Entry {
                 id,
                 completed,
@@ -174,7 +165,7 @@ impl Application for TodoMVC {
             } = *entry;
 
             h::li()
-                .if_true(completed, |h| h.class("completed"))
+                .if_(completed, |h| h.class("completed"))
                 .with(
                     h::div().class("view").with((
                         h::input()
@@ -190,7 +181,7 @@ impl Application for TodoMVC {
                             .on("click", move |_| Message::Delete(id)),
                     )),
                 )
-                .if_true(editing, |h| {
+                .if_(editing, |h| {
                     h.class("editing").with(
                         h::input()
                             .class("edit")
@@ -202,9 +193,9 @@ impl Application for TodoMVC {
                             .on_enter(move || Message::EditingEntry(id, false)),
                     )
                 })
-        };
+        }
 
-        let view_entries = h::section().class("main").with((
+        let entries = h::section().class("main").with((
             h::input()
                 .class("toggle-all")
                 .type_("checkbox")
@@ -213,9 +204,9 @@ impl Application for TodoMVC {
                 .on("click", move |_| Message::CheckAll(!all_completed)),
             h::label().for_("toggle-all").with("Mark all as complete"),
             h::ul().class("todo-list").append(
-                entries
+                m.entries
                     .values()
-                    .filter(|entry| match visibility {
+                    .filter(|entry| match m.visibility {
                         Some(Visibility::Active) => !entry.completed,
                         Some(Visibility::Completed) => entry.completed,
                         _ => true,
@@ -224,46 +215,46 @@ impl Application for TodoMVC {
             ),
         ));
 
-        let controls = || {
+        let controls = if !m.entries.is_empty() {
             let visibility_swap = |v: Visibility, url: &'static str, text: &'static str| {
                 h::li()
                     .on("click", move |_| Message::ChangeVisibility(v))
                     .with(
                         h::a()
                             .href(url)
-                            .if_true(visibility.map_or(false, |vis| vis == v), |h| {
+                            .if_(m.visibility.map_or(false, |vis| vis == v), |h| {
                                 h.class("selected")
                             })
                             .with(text),
                     )
             };
-
-            let entries_left = entries.values().filter(|e| !e.completed).count();
-            let plural_suffix = |n| if n == 1 { "" } else { "s" };
-
-            h::footer()
-                .class("footer")
-                .with((
-                    h::span().class("todo-count").with((
-                        h::strong().with(entries_left),
-                        " item",
-                        plural_suffix(entries_left),
-                        " left",
-                    )),
-                    h::ul().class("filters").with((
-                        visibility_swap(Visibility::All, "#/", "All"),
-                        visibility_swap(Visibility::Active, "#/active", "Active"),
-                        visibility_swap(Visibility::Completed, "#/completed", "Completed"),
-                    )),
-                ))
-                .if_true(entries.values().any(|entry| entry.completed), |h| {
-                    h.with(
-                        h::button()
-                            .class("clear-completed")
-                            .on("click", |_| Message::DeleteComplete)
-                            .with("Clear completed"),
-                    )
-                })
+            Some(
+                h::footer()
+                    .class("footer")
+                    .with((
+                        h::span().class("todo-count").with((
+                            h::strong().with(entries_left),
+                            " item",
+                            plural_suffix(entries_left),
+                            " left",
+                        )),
+                        h::ul().class("filters").with((
+                            visibility_swap(Visibility::All, "#/", "All"),
+                            visibility_swap(Visibility::Active, "#/active", "Active"),
+                            visibility_swap(Visibility::Completed, "#/completed", "Completed"),
+                        )),
+                    ))
+                    .if_(has_completed, |h| {
+                        h.with(
+                            h::button()
+                                .class("clear-completed")
+                                .on("click", |_| Message::DeleteCompleted)
+                                .with("Clear completed"),
+                        )
+                    }),
+            )
+        } else {
+            None
         };
 
         let info_footer = h::footer().class("info").with((
@@ -286,8 +277,8 @@ impl Application for TodoMVC {
             .with((
                 h::section()
                     .class("todoapp")
-                    .with((input, view_entries))
-                    .if_false(entries.is_empty(), |h| h.with(controls())),
+                    .with((input, entries))
+                    .if_some(controls, |h, c| h.with(c)),
                 info_footer,
             ))
             .into()
@@ -295,7 +286,7 @@ impl Application for TodoMVC {
 }
 
 trait BuilderExt {
-    fn if_true(self, pred: bool, f: impl FnOnce(Self) -> Self) -> Self
+    fn if_(self, pred: bool, f: impl FnOnce(Self) -> Self) -> Self
     where
         Self: Sized,
     {
@@ -306,11 +297,15 @@ trait BuilderExt {
         }
     }
 
-    fn if_false(self, pred: bool, f: impl FnOnce(Self) -> Self) -> Self
+    fn if_some<T>(self, v: Option<T>, f: impl FnOnce(Self, T) -> Self) -> Self
     where
         Self: Sized,
     {
-        self.if_true(!pred, f)
+        if let Some(v) = v {
+            f(self, v)
+        } else {
+            self
+        }
     }
 }
 
@@ -358,6 +353,14 @@ impl<Msg> VElementExt<Msg> for draco::VNonKeyedElement<Msg> {
                 _ => None,
             }
         })
+    }
+}
+
+fn plural_suffix(n: usize) -> &'static str {
+    if n == 1 {
+        ""
+    } else {
+        "s"
     }
 }
 
