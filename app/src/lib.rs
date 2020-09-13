@@ -23,6 +23,7 @@ struct Entry {
     id: TodoId,
     description: String,
     completed: bool,
+    #[serde(skip)]
     editing: bool,
     #[serde(skip)]
     ref_: Option<web_sys::Element>,
@@ -36,6 +37,7 @@ enum Message {
     UpdateEntry(TodoId, String),
     EditingEntry(TodoId, bool),
     RefEntry(TodoId, Option<web_sys::Element>),
+    FocusEntryInput(TodoId),
 }
 
 #[derive(Debug)]
@@ -54,7 +56,7 @@ impl TodoMVC {
 impl Application for TodoMVC {
     type Message = Message;
 
-    fn update(&mut self, message: Self::Message, _: &Mailbox<Self::Message>) {
+    fn update(&mut self, message: Self::Message, mailbox: &Mailbox<Self::Message>) {
         let Self {
             model:
                 Model {
@@ -104,17 +106,23 @@ impl Application for TodoMVC {
             Message::EditingEntry(id, editing) => {
                 if let Some(entry) = entries.get_mut(&id) {
                     entry.editing = editing;
-                    if let Some(ref e) = entry.ref_ {
-                        if let Some(e) = e.dyn_ref::<web_sys::HtmlElement>() {
-                            let _ = e.focus();
-                        }
+                    if editing {
+                        const INTERVAL_MS: i32 = 10;
+                        mailbox.send_after(INTERVAL_MS, move || Message::FocusEntryInput(id));
                     }
-                    self.set_storage();
                 }
             }
             Message::RefEntry(id, ref_) => {
                 if let Some(entry) = entries.get_mut(&id) {
                     entry.ref_ = ref_;
+                }
+            }
+            Message::FocusEntryInput(id) => {
+                if let Some(entry) = entries.get_mut(&id) {
+                    if let Some(ref e) = entry.ref_ {
+                        let e = e.dyn_ref::<web_sys::HtmlElement>().unwrap_throw();
+                        e.focus().unwrap_throw();
+                    }
                 }
             }
         }
@@ -168,7 +176,7 @@ impl Application for TodoMVC {
                         .class("edit")
                         .value(description.clone())
                         .name("title")
-                        .id(format!("todo-{}", id))
+                        .ref_(move |e| Message::RefEntry(id, e))
                         .on_input(move |input| Message::UpdateEntry(id, input))
                         .on("blur", move |_| Message::EditingEntry(id, false))
                         .on_enter(move || Message::EditingEntry(id, false))
