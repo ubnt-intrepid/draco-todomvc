@@ -13,7 +13,7 @@ module.exports = (env, argv) => {
             app: path.resolve(srcDir, 'index.js'),
         },
         output: {
-            publicPath: '/',
+            publicPath: './',
             path: distDir,
             filename: '[name].[contenthash].js',
         },
