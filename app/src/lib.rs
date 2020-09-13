@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use std::mem;
 use ulid::Ulid;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast as _;
 
 type TodoId = Ulid;
 
@@ -26,11 +25,10 @@ struct Entry {
     completed: bool,
     #[serde(skip)]
     editing: bool,
-    #[serde(skip)]
-    ref_: Option<web_sys::Element>,
 }
 
 enum Message {
+    Nop,
     UpdateField(String),
     Add,
     Check(TodoId, bool),
@@ -39,8 +37,7 @@ enum Message {
     DeleteComplete,
     UpdateEntry(TodoId, String),
     EditingEntry(TodoId, bool),
-    RefEntry(TodoId, Option<web_sys::Element>),
-    FocusEntryInput(TodoId),
+    FocusEntry(web_sys::Element),
     ChangeVisibility(Visibility),
 }
 
@@ -67,7 +64,7 @@ impl TodoMVC {
 impl Application for TodoMVC {
     type Message = Message;
 
-    fn update(&mut self, message: Self::Message, mailbox: &Mailbox<Self::Message>) {
+    fn update(&mut self, message: Self::Message, _: &Mailbox<Self::Message>) {
         let Self {
             model:
                 Model {
@@ -80,6 +77,7 @@ impl Application for TodoMVC {
         } = *self;
 
         match message {
+            Message::Nop => (),
             Message::UpdateField(new_input) => {
                 *input = new_input;
             }
@@ -94,7 +92,6 @@ impl Application for TodoMVC {
                             description,
                             completed: false,
                             editing: false,
-                            ref_: None,
                         },
                     );
                 }
@@ -128,24 +125,11 @@ impl Application for TodoMVC {
             Message::EditingEntry(id, editing) => {
                 if let Some(entry) = entries.get_mut(&id) {
                     entry.editing = editing;
-                    if editing {
-                        const INTERVAL_MS: i32 = 10;
-                        mailbox.send_after(INTERVAL_MS, move || Message::FocusEntryInput(id));
-                    }
                 }
             }
-            Message::RefEntry(id, ref_) => {
-                if let Some(entry) = entries.get_mut(&id) {
-                    entry.ref_ = ref_;
-                }
-            }
-            Message::FocusEntryInput(id) => {
-                if let Some(entry) = entries.get_mut(&id) {
-                    if let Some(ref e) = entry.ref_ {
-                        let e = e.dyn_ref::<web_sys::HtmlElement>().unwrap_throw();
-                        e.focus().unwrap_throw();
-                    }
-                }
+            Message::FocusEntry(e) => {
+                let e: web_sys::HtmlInputElement = JsValue::from(e).into();
+                e.focus().unwrap_throw();
             }
             Message::ChangeVisibility(new_visibility) => {
                 visibility.replace(new_visibility);
@@ -191,8 +175,7 @@ impl Application for TodoMVC {
 
             h::li()
                 .if_true(completed, |h| h.class("completed"))
-                .if_true(editing, |h| h.class("editing"))
-                .with((
+                .with(
                     h::div().class("view").with((
                         h::input()
                             .class("toggle")
@@ -206,16 +189,19 @@ impl Application for TodoMVC {
                             .class("destroy")
                             .on("click", move |_| Message::Delete(id)),
                     )),
-                    h::input()
-                        .class("edit")
-                        .value(description.clone())
-                        .name("title")
-                        .ref_(move |e| Message::RefEntry(id, e))
-                        .on_input(move |input| Message::UpdateEntry(id, input))
-                        .on("blur", move |_| Message::EditingEntry(id, false))
-                        .on_enter(move || Message::EditingEntry(id, false))
-                        .ref_(move |e| Message::RefEntry(id, e)),
-                ))
+                )
+                .if_true(editing, |h| {
+                    h.class("editing").with(
+                        h::input()
+                            .class("edit")
+                            .value(description.clone())
+                            .name("title")
+                            .ref_(move |elem| elem.map_or(Message::Nop, Message::FocusEntry))
+                            .on_input(move |input| Message::UpdateEntry(id, input))
+                            .on("blur", move |_| Message::EditingEntry(id, false))
+                            .on_enter(move || Message::EditingEntry(id, false)),
+                    )
+                })
         };
 
         let view_entries = h::section().class("main").with((
