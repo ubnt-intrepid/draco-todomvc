@@ -1,3 +1,3 @@
 import 'todomvc-app-css/index.css';
 
-import('./app/index.js');
+import('./pkg/index.js');

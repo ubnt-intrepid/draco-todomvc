@@ -371,8 +371,6 @@ pub fn main() -> Result<(), JsValue> {
         .document()
         .ok_or("should have a document on window")?;
 
-    document.set_title("Draco • TodoMVC");
-
     let app = document
         .get_element_by_id("app")
         .ok_or("missing `app` in document")?;
